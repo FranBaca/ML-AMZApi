@@ -142,7 +142,6 @@ app.get('/search', async (req, res) => {
 
         const validProducts = filteredProducts.filter(item => item !== null);
 
-        // Calcular el promedio de los precios
         const totalPrice = validProducts.reduce((acc, product) => acc + product.price, 0);
         const averagePrice = validProducts.length > 0 ? totalPrice / validProducts.length : 0;
 
