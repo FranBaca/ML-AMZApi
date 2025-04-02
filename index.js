@@ -33,34 +33,37 @@ app.post("/auth/mercadolibre", async (req, res) => {
     }
   });
 
-app.get('/auth/mercadolibre/callback', async (req, res) => {
+  app.get('/auth/mercadolibre/callback', async (req, res) => {
     const { code } = req.query;
-    console.log(code)
+    console.log("Código recibido:", code);
 
     if (!code) {
         return res.status(400).json({ error: 'Código de autorización faltante.' });
     }
 
     try {
-        const response = await axios.post('https://api.mercadolibre.com/oauth/token', null, {
-            params: {
+        const response = await axios.post(
+            'https://api.mercadolibre.com/oauth/token',
+            qs.stringify({  // 🔹 Formateamos el body correctamente
                 grant_type: "authorization_code",
-                client_id: CLIENT_ID,
-                client_secret: CLIENT_SECRET,
-                code,
-                redirect_uri: REDIRECT_URI
-            },
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-        });
+                client_id: process.env.CLIENT_ID,
+                client_secret: process.env.CLIENT_SECRET,
+                code: code,
+                redirect_uri: process.env.REDIRECT_URI
+            }),
+            {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            }
+        );
 
         const { access_token, refresh_token, expires_in } = response.data;
-        console.log(response.data)
+        console.log("✅ Token obtenido:", response.data);
 
         res.json({ access_token, refresh_token, expires_in });
 
     } catch (error) {
-        console.error("Error getting the token", error?.response?.data || error.message);
-        res.status(500).json({ error: "Error getting the token" });
+        console.error("❌ Error obteniendo el token:", error?.response?.data || error.message);
+        res.status(500).json({ error: "Error getting the token", details: error.response?.data || error.message });
     }
 });
 
