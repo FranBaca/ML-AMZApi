@@ -46,10 +46,10 @@ app.post("/auth/mercadolibre", async (req, res) => {
             'https://api.mercadolibre.com/oauth/token',
             qs.stringify({  // 🔹 Formateamos el body correctamente
                 grant_type: "authorization_code",
-                client_id: process.env.CLIENT_ID,
-                client_secret: process.env.CLIENT_SECRET,
+                client_id: CLIENT_ID,
+                client_secret: CLIENT_SECRET,
                 code: code,
-                redirect_uri: process.env.REDIRECT_URI
+                redirect_uri: REDIRECT_URI
             }),
             {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
