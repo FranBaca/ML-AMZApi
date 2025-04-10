@@ -93,15 +93,23 @@ app.get('/my-items', async (req, res) => {
 });
 
 app.get('/search', async (req, res) => {
-    const access_token = req.headers.authorization;
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ 
+            error: "Error al buscar el producto", 
+            details: { 
+                code: "unauthorized", 
+                message: "authorization value not present or invalid format" 
+            } 
+        });
+    }
+
+    const access_token = authHeader.split(' ')[1];
     const { q } = req.query;
 
     if (!q) {
         return res.status(400).json({ error: "Missing search parameter" });
-    }
-
-    if (!access_token) {
-        return res.status(400).json({ error: "User is not authenticated" });
     }
 
     try {
