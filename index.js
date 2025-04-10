@@ -20,13 +20,15 @@ app.get("/status", (req,res) =>{
 
 app.post("/auth/mercadolibre", async (req, res) => { 
     try {
-      const response = await axios.post("https://api.mercadolibre.com/oauth/token", {
-        grant_type: "client_credentials",
-        client_id: CLIENT_ID,
-        client_secret: CLIENT_SECRET,
-      }, {
+      const response = await axios.post("https://api.mercadolibre.com/oauth/token", 
+        qs.stringify({
+          grant_type: "client_credentials",
+          client_id: CLIENT_ID,
+          client_secret: CLIENT_SECRET
+        }), {
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json'
         }
       });
 
@@ -130,6 +132,7 @@ app.get('/search', async (req, res) => {
     }
 
     try {
+        console.log("Token usado para la búsqueda:", access_token); // Para debug
         const response = await axios.get(`https://api.mercadolibre.com/sites/MLA/search`, {
             params: {
                 q: q,
@@ -137,9 +140,12 @@ app.get('/search', async (req, res) => {
                 limit: 10 
             },
             headers: {
-                Authorization: `Bearer ${access_token}`
+                Authorization: `Bearer ${access_token}`,
+                'Accept': 'application/json'
             }
         });
+
+        console.log("Respuesta de MercadoLibre:", response.data); // Para debug
 
         const filteredProducts = response.data.results.map(item => {
             const hasValidTags = item.tags && Array.isArray(item.tags);
@@ -155,7 +161,7 @@ app.get('/search', async (req, res) => {
                 item.tags.includes('pack_of_2') || 
                 item.tags.includes('pack_of_3')
             ) {
-                return item;
+                return null;
             }
 
             return {
@@ -170,6 +176,13 @@ app.get('/search', async (req, res) => {
 
         const validProducts = filteredProducts.filter(item => item !== null);
 
+        if (validProducts.length === 0) {
+            return res.status(404).json({ 
+                error: "No se encontraron productos", 
+                details: "No hay productos disponibles que cumplan con los criterios de búsqueda" 
+            });
+        }
+
         const totalPrice = validProducts.reduce((acc, product) => acc + product.price, 0);
         const averagePrice = validProducts.length > 0 ? totalPrice / validProducts.length : 0;
 
@@ -179,14 +192,14 @@ app.get('/search', async (req, res) => {
         };
 
         res.json(result);
-        console.log(result)
     } catch (error) {
-        console.error("No product was found, please search another item:", error.response?.data || error.message);
-        res.status(500).json({ error: 'Error al buscar el producto', details: error.response?.data || error.message });
+        console.error("Error en la búsqueda de MercadoLibre:", error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({ 
+            error: 'Error al buscar el producto', 
+            details: error.response?.data || error.message 
+        });
     }
 });
-
-
 
 app.get("/search-amazon", async (req, res) => {
     try {
