@@ -17,6 +17,51 @@ const REDIRECT_URI = process.env.ML_REDIRECT_URI;
 // Variable para almacenar el token de usuario
 let userToken = null;
 
+// Variable para almacenar el token de aplicación
+let appToken = null;
+
+// Función para obtener/refrescar el token de aplicación
+const getAppToken = async () => {
+  try {
+    const response = await axios.post(
+      'https://api.mercadolibre.com/oauth/token',
+      qs.stringify({
+        grant_type: 'client_credentials',
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET
+      }),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    appToken = response.data.access_token;
+    console.log("✅ Token de aplicación obtenido");
+    return appToken;
+  } catch (error) {
+    console.error("❌ Error obteniendo token de aplicación:", error.response?.data || error.message);
+    throw error;
+  }
+};
+
+// Middleware para verificar/obtener el token
+const ensureToken = async (req, res, next) => {
+  try {
+    if (!appToken) {
+      await getAppToken();
+    }
+    next();
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Error de autenticación", 
+      details: "No se pudo obtener el token de aplicación" 
+    });
+  }
+};
+
 // Endpoint para iniciar la autenticación
 app.get("/auth/mercadolibre", async (req, res) => {
   try {
@@ -71,8 +116,8 @@ const ensureUserToken = async (req, res, next) => {
   next();
 };
 
-// Endpoint de búsqueda usando la API pública
-app.get("/search", async (req, res) => {
+// Endpoint de búsqueda usando el token de aplicación
+app.get("/search", ensureToken, async (req, res) => {
   const { q } = req.query;
 
   if (!q) {
@@ -80,8 +125,7 @@ app.get("/search", async (req, res) => {
   }
 
   try {
-    console.log("Buscando productos para:", q);
-    
+    console.log("Realizando búsqueda con token de aplicación");
     const response = await axios.get(
       `https://api.mercadolibre.com/sites/MLA/search`,
       {
@@ -91,6 +135,7 @@ app.get("/search", async (req, res) => {
           limit: 10
         },
         headers: {
+          Authorization: `Bearer ${appToken}`,
           'Accept': 'application/json'
         }
       }
@@ -164,25 +209,26 @@ app.get("/search", async (req, res) => {
       status: error.response?.status
     });
     
-    if (error.response) {
-      // Si la API de MercadoLibre devuelve un error
-      res.status(error.response.status).json({ 
-        error: "Error en la API de MercadoLibre",
-        details: error.response.data
-      });
-    } else if (error.request) {
-      // Si no se pudo hacer la petición
-      res.status(500).json({ 
-        error: "No se pudo conectar con MercadoLibre",
-        details: error.message
-      });
-    } else {
-      // Error en la configuración de la petición
-      res.status(500).json({ 
-        error: "Error al realizar la búsqueda",
-        details: error.message
-      });
+    if (error.response?.status === 401) {
+      // Si el token expiró, intentamos obtener uno nuevo
+      try {
+        await getAppToken();
+        return res.status(401).json({ 
+          error: "Token expirado", 
+          details: "Por favor, intenta nuevamente" 
+        });
+      } catch (refreshError) {
+        return res.status(500).json({ 
+          error: "Error de autenticación", 
+          details: "No se pudo refrescar el token" 
+        });
+      }
     }
+    
+    res.status(error.response?.status || 500).json({ 
+      error: "Error al buscar productos",
+      details: error.response?.data || error.message
+    });
   }
 });
 
