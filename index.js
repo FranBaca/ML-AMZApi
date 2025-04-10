@@ -80,6 +80,8 @@ app.get("/search", async (req, res) => {
   }
 
   try {
+    console.log("Buscando productos para:", q);
+    
     const response = await axios.get(
       `https://api.mercadolibre.com/sites/MLA/search`,
       {
@@ -87,9 +89,14 @@ app.get("/search", async (req, res) => {
           q: q,
           status: "active",
           limit: 10
+        },
+        headers: {
+          'Accept': 'application/json'
         }
       }
     );
+
+    console.log("Respuesta de MercadoLibre:", response.data);
 
     if (!response.data.results || response.data.results.length === 0) {
       return res.status(404).json({ error: "No se encontraron productos" });
@@ -97,41 +104,46 @@ app.get("/search", async (req, res) => {
 
     const filteredProducts = response.data.results
       .map((item) => {
-        const hasValidTags = item.tags && Array.isArray(item.tags);
-        const isPack = item.attributes.some(
-          (attr) =>
-            attr.name === "Formato de venta" && attr.value_name === "Pack"
-        );
-        const hasPromotion =
-          item.promotions ||
-          item.promotion_decorations ||
-          item.sale_price?.amount !== item.price;
+        try {
+          const hasValidTags = item.tags && Array.isArray(item.tags);
+          const isPack = item.attributes?.some(
+            (attr) =>
+              attr.name === "Formato de venta" && attr.value_name === "Pack"
+          );
+          const hasPromotion =
+            item.promotions ||
+            item.promotion_decorations ||
+            (item.sale_price && item.sale_price.amount !== item.price);
 
-        if (
-          isPack ||
-          hasPromotion ||
-          item.available_quantity <= 0 ||
-          !hasValidTags ||
-          item.tags.includes("deal_of_the_day") ||
-          item.tags.includes("pack_of_2") ||
-          item.tags.includes("pack_of_3")
-        ) {
+          if (
+            isPack ||
+            hasPromotion ||
+            item.available_quantity <= 0 ||
+            !hasValidTags ||
+            item.tags.includes("deal_of_the_day") ||
+            item.tags.includes("pack_of_2") ||
+            item.tags.includes("pack_of_3")
+          ) {
+            return null;
+          }
+
+          return {
+            id: item.id,
+            title: item.title,
+            price: item.sale_price ? item.sale_price.amount : item.price,
+            currency: item.currency_id,
+            thumbnail: item.thumbnail,
+            permalink: item.permalink
+          };
+        } catch (error) {
+          console.error("Error procesando producto:", error);
           return null;
         }
-
-        return {
-          id: item.id,
-          title: item.title,
-          price: item.sale_price ? item.sale_price.amount : item.price,
-          currency: item.currency_id,
-          thumbnail: item.thumbnail,
-          permalink: item.permalink
-        };
       })
       .filter((item) => item !== null);
 
     if (filteredProducts.length === 0) {
-      return res.status(404).json({ error: "No se encontraron productos" });
+      return res.status(404).json({ error: "No se encontraron productos válidos" });
     }
 
     const totalPrice = filteredProducts.reduce(
@@ -146,8 +158,31 @@ app.get("/search", async (req, res) => {
       averagePrice: averagePrice.toFixed(2)
     });
   } catch (error) {
-    console.error("Error en la búsqueda:", error.response?.data || error.message);
-    res.status(500).json({ error: "Error al buscar productos" });
+    console.error("Error en la búsqueda:", {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status
+    });
+    
+    if (error.response) {
+      // Si la API de MercadoLibre devuelve un error
+      res.status(error.response.status).json({ 
+        error: "Error en la API de MercadoLibre",
+        details: error.response.data
+      });
+    } else if (error.request) {
+      // Si no se pudo hacer la petición
+      res.status(500).json({ 
+        error: "No se pudo conectar con MercadoLibre",
+        details: error.message
+      });
+    } else {
+      // Error en la configuración de la petición
+      res.status(500).json({ 
+        error: "Error al realizar la búsqueda",
+        details: error.message
+      });
+    }
   }
 });
 
