@@ -20,34 +20,19 @@ app.get("/status", (req,res) =>{
 
 app.post("/auth/mercadolibre", async (req, res) => { 
     try {
-      const response = await axios.post("https://api.mercadolibre.com/oauth/token", 
-        qs.stringify({
-          grant_type: "client_credentials",
-          client_id: CLIENT_ID,
-          client_secret: CLIENT_SECRET
-        }), {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'application/json'
-        }
-      });
-
-      console.log("Respuesta de MercadoLibre:", response.data); // Para debug
-
-      if (!response.data.access_token) {
-        throw new Error("No se recibió el token de acceso de MercadoLibre");
-      }
-
-      res.json({
-        access_token: response.data.access_token,
-        token_type: response.data.token_type,
-        expires_in: response.data.expires_in
+      // Primero, obtenemos el código de autorización
+      const authUrl = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_URI}`;
+      
+      // Redirigimos al usuario a la página de autorización de MercadoLibre
+      res.json({ 
+        authUrl,
+        message: "Por favor, autoriza la aplicación en MercadoLibre"
       });
     } catch (error) {
-      console.error("❌ Error autenticando en MercadoLibre:", error.response?.data || error.message);
+      console.error("❌ Error iniciando autenticación:", error);
       res.status(500).json({ 
-        error: "Error autenticando en MercadoLibre", 
-        details: error.response?.data || error.message 
+        error: "Error iniciando autenticación", 
+        details: error.message 
       });
     }
 });
@@ -63,7 +48,7 @@ app.get('/auth/mercadolibre/callback', async (req, res) => {
     try {
         const response = await axios.post(
             'https://api.mercadolibre.com/oauth/token',
-            qs.stringify({  // 🔹 Formateamos el body correctamente
+            qs.stringify({
                 grant_type: "authorization_code",
                 client_id: CLIENT_ID,
                 client_secret: CLIENT_SECRET,
@@ -71,18 +56,29 @@ app.get('/auth/mercadolibre/callback', async (req, res) => {
                 redirect_uri: REDIRECT_URI
             }),
             {
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+                headers: { 
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json'
+                }
             }
         );
 
         const { access_token, refresh_token, expires_in } = response.data;
         console.log("✅ Token obtenido:", response.data);
 
-        res.json({ access_token, refresh_token, expires_in });
+        res.json({ 
+            access_token, 
+            refresh_token, 
+            expires_in,
+            message: "Autenticación exitosa"
+        });
 
     } catch (error) {
         console.error("❌ Error obteniendo el token:", error?.response?.data || error.message);
-        res.status(500).json({ error: "Error getting the token", details: error.response?.data || error.message });
+        res.status(500).json({ 
+            error: "Error obteniendo el token", 
+            details: error.response?.data || error.message 
+        });
     }
 });
 
