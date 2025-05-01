@@ -129,68 +129,70 @@ app.get('/search', async (req, res) => {
   }
 });
 
-app.get('/search-amazon', async (req, res) => {
-  const query = req.query.query;
-  if (!query) {
-    return res.status(400).json({ error: 'Query parameter is required' });
-  }
+app.get("/search-amazon", async (req, res) => {
+    try {
+        const { query } = req.query;
+        console.log("Buscando en Amazon:", query);
 
-  try {
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--disable-gpu',
-        '--window-size=1920x1080'
-      ]
-    });
-    
-    const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
-    
-    const searchUrl = `https://www.amazon.com/s?k=${encodeURIComponent(query)}`;
-    await page.goto(searchUrl, { waitUntil: 'networkidle0', timeout: 30000 });
-    
-    const products = await page.evaluate(() => {
-      const items = Array.from(document.querySelectorAll('.s-result-item'));
-      return items.slice(0, 5).map(item => {
-        const titleElement = item.querySelector('h2 a');
-        const priceElement = item.querySelector('.a-price .a-offscreen');
-        const imageElement = item.querySelector('img');
-        const linkElement = item.querySelector('h2 a');
+        if (!query) {
+            return res.status(400).json({ error: "Query parameter is required" });
+        }
+
+        const browser = await puppeteer.launch({ 
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
+        const page = await browser.newPage();
+
+        const amazonURL = `https://www.amazon.com/s?k=${encodeURIComponent(query)}`;
+        console.log("URL de búsqueda:", amazonURL);
         
-        return {
-          title: titleElement ? titleElement.textContent.trim() : 'No title available',
-          price: priceElement ? parseFloat(priceElement.textContent.replace('$', '')) : 0,
-          link: linkElement ? `https://www.amazon.com${linkElement.getAttribute('href')}` : '',
-          image: imageElement ? imageElement.src : ''
-        };
-      }).filter(product => product.price > 0);
-    });
+        await page.goto(amazonURL, { 
+            waitUntil: "domcontentloaded",
+            timeout: 30000 
+        });
 
-    await browser.close();
+        const products = await page.evaluate(() => {
+            const items = document.querySelectorAll('[data-component-type="s-search-result"]');
+            return Array.from(items).slice(0, 5).map((item) => {
+                const title = item.querySelector(".a-link-normal .s-line-clamp-2 .s-link-style .a-text-normal")?.innerText || "No title";
+                const priceText = item.querySelector(".a-price .a-offscreen")?.innerText || "No price";
+                const link = "https://www.amazon.com" + (item.querySelector("h2 a")?.getAttribute("href") || "#");
+                const image = item.querySelector("img")?.getAttribute("src") || "";
 
-    if (products.length === 0) {
-      return res.status(404).json({ error: 'No products found' });
+                let price = parseFloat(priceText.replace(/[^0-9.]/g, ""));
+                if (isNaN(price)) {
+                    price = null; 
+                }
+
+                return { title, price, link, image };
+            });
+        });
+
+        await browser.close();
+
+        const validProducts = products.filter(product => product.price !== null);
+
+        if (validProducts.length === 0) {
+            return res.status(404).json({ error: "No se encontraron productos válidos" });
+        }
+
+        const totalPrice = validProducts.reduce((acc, product) => acc + product.price, 0);
+        const averagePrice = validProducts.length > 0 ? totalPrice / validProducts.length : 0;
+
+        console.log("Productos encontrados:", validProducts.length);
+        res.json({
+            products: validProducts,
+            averagePrice: averagePrice.toFixed(2)
+        });
+
+    } catch (error) {
+        console.error("Error en la búsqueda de Amazon:", error);
+        res.status(500).json({ 
+            error: "Error al obtener los productos de Amazon",
+            details: error.message 
+        });
     }
-
-    const totalPrice = products.reduce((sum, product) => sum + product.price, 0);
-    const averagePrice = (totalPrice / products.length).toFixed(2);
-
-    res.json({
-      products,
-      averagePrice
-    });
-  } catch (error) {
-    console.error('Error scraping Amazon:', error);
-    res.status(500).json({ 
-      error: 'Error al obtener los productos de Amazon',
-      details: error.message 
-    });
-  }
 });
 
 app.listen(PORT, "0.0.0.0", () => {
