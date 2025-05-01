@@ -48,6 +48,10 @@ app.get('/search', async (req, res) => {
   try {
       const accessToken = await getAccessToken();
 
+      // Obtener tasa de cambio USD a ARS
+      const exchangeResponse = await axios.get('https://api.exchangerate-api.com/v4/latest/USD');
+      const usdToArsRate = exchangeResponse.data.rates.ARS;
+
       const response = await axios.get(`https://api.ebay.com/buy/browse/v1/item_summary/search`, {
           params: {
               q,
@@ -64,6 +68,7 @@ app.get('/search', async (req, res) => {
       const products = items.map(item => ({
           title: item.title,
           price: item.price.value,
+          priceARS: (parseFloat(item.price.value) * usdToArsRate).toFixed(2),
           currency: item.price.currency,
           thumbnail: item.image?.imageUrl || null,
           link: item.itemWebUrl
@@ -71,10 +76,13 @@ app.get('/search', async (req, res) => {
 
       const totalPrice = products.reduce((acc, p) => acc + parseFloat(p.price), 0);
       const averagePrice = products.length ? (totalPrice / products.length).toFixed(2) : 0;
+      const averagePriceARS = products.length ? (averagePrice * usdToArsRate).toFixed(2) : 0;
 
       res.json({
           products,
-          averagePrice
+          averagePrice,
+          averagePriceARS,
+          exchangeRate: usdToArsRate
       });
 
   } catch (error) {
