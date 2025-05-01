@@ -43,51 +43,89 @@ async function getAccessToken() {
 app.get('/search', async (req, res) => {
   const { q } = req.query;
 
-  if (!q) return res.status(400).json({ error: 'Falta parámetro de búsqueda (q)' });
+  if (!q) {
+    return res.status(400).json({ error: 'Falta parámetro de búsqueda (q)' });
+  }
 
   try {
-      const accessToken = await getAccessToken();
+    console.log('Obteniendo token de acceso...');
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      throw new Error('No se pudo obtener el token de acceso');
+    }
+    console.log('Token obtenido exitosamente');
 
-      // Obtener tasa de cambio USD a ARS
-      const exchangeResponse = await axios.get('https://api.exchangerate-api.com/v4/latest/USD');
-      const usdToArsRate = exchangeResponse.data.rates.ARS;
+    console.log('Obteniendo tasa de cambio...');
+    const exchangeResponse = await axios.get('https://api.exchangerate-api.com/v4/latest/USD');
+    const usdToArsRate = exchangeResponse.data.rates.ARS;
+    console.log('Tasa de cambio obtenida:', usdToArsRate);
 
-      const response = await axios.get(`https://api.ebay.com/buy/browse/v1/item_summary/search`, {
-          params: {
-              q,
-              limit: 10
-          },
-          headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
-          }
-      });
+    console.log('Buscando productos en eBay...');
+    const response = await axios.get(`https://api.ebay.com/buy/browse/v1/item_summary/search`, {
+      params: {
+        q,
+        limit: 10
+      },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US'
+      }
+    });
 
-      const items = response.data.itemSummaries || [];
+    console.log('Respuesta de eBay recibida');
+    const items = response.data.itemSummaries || [];
 
-      const products = items.map(item => ({
-          title: item.title,
-          price: item.price.value,
-          priceARS: (parseFloat(item.price.value) * usdToArsRate).toFixed(2),
-          currency: item.price.currency,
-          thumbnail: item.image?.imageUrl || null,
-          link: item.itemWebUrl
-      }));
+    if (items.length === 0) {
+      return res.status(404).json({ error: 'No se encontraron productos' });
+    }
 
-      const totalPrice = products.reduce((acc, p) => acc + parseFloat(p.price), 0);
-      const averagePrice = products.length ? (totalPrice / products.length).toFixed(2) : 0;
-      const averagePriceARS = products.length ? (averagePrice * usdToArsRate).toFixed(2) : 0;
+    const products = items.map(item => ({
+      title: item.title,
+      price: item.price.value,
+      priceARS: (parseFloat(item.price.value) * usdToArsRate).toFixed(2),
+      currency: item.price.currency,
+      thumbnail: item.image?.imageUrl || null,
+      link: item.itemWebUrl
+    }));
 
-      res.json({
-          products,
-          averagePrice,
-          averagePriceARS,
-          exchangeRate: usdToArsRate
-      });
+    const totalPrice = products.reduce((acc, p) => acc + parseFloat(p.price), 0);
+    const averagePrice = products.length ? (totalPrice / products.length).toFixed(2) : '0';
+    const averagePriceARS = products.length ? (parseFloat(averagePrice) * usdToArsRate).toFixed(2) : '0';
+
+    console.log('Búsqueda completada exitosamente');
+    res.json({
+      products,
+      averagePrice,
+      averagePriceARS,
+      exchangeRate: usdToArsRate
+    });
 
   } catch (error) {
-      console.error('Error al buscar productos:', error.response?.data || error.message);
-      res.status(500).json({ error: 'Error al buscar productos', details: error.response?.data || error.message });
+    console.error('Error detallado:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      stack: error.stack
+    });
+
+    if (error.response?.status === 401) {
+      return res.status(401).json({ 
+        error: 'Error de autenticación',
+        details: 'Token inválido o expirado'
+      });
+    }
+
+    if (error.response?.status === 404) {
+      return res.status(404).json({ 
+        error: 'No se encontraron productos',
+        details: error.response?.data?.message
+      });
+    }
+
+    res.status(500).json({ 
+      error: 'Error al buscar productos',
+      details: error.response?.data || error.message
+    });
   }
 });
 
